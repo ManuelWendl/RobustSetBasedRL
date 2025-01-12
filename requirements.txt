@@ -1,0 +1,4 @@
+torch
+gymnasium==0.29.1
+gymnasium[other]
+numpy
