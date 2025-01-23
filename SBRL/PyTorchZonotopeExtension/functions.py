@@ -15,8 +15,8 @@ def train(model,loss,optimizer,xTrain,yTrain,epochs,batchsize=64,noise=0.0,verbo
     - model: Neural network torch model
     - loss: loss function for nn training 
     - optimizer: inintialized optimizer with weights of the model
-    - xTrain: xData with size (input size, num. samples)
-    - yTrain: yData with size (output sizem num. samples)
+    - xTrain: torch tensor xData with size (input size, num. samples)
+    - yTrain: torch tensor yData with size (output sizem num. samples)
     - epochs: number of training epochs
     - batchsize: mini batchsize for training
     - noise: perturbation radius for set-based trainig 
@@ -31,18 +31,18 @@ def train(model,loss,optimizer,xTrain,yTrain,epochs,batchsize=64,noise=0.0,verbo
     startTime = time.time()
 
     for epoch in range(epochs):
-        indxShuffled = torch.randperm(xTrain.size(1))
+        indxShuffled = torch.randperm(xTrain.shape[1])
         epochLoss = 0
         for itter in range(numItter):
-            xBatch = torch.as_tensor(xTrain[:,indxShuffled[itter*batchsize:(itter+1)*batchsize]],dtype=torch.float32)
+            xBatch = xTrain[:,indxShuffled[itter*batchsize:(itter+1)*batchsize]]
 
             optimizer.zero_grad()
             if noise > 0:
-                outputs = model(core.Zonotope(torch.cat([xBatch.unsqueeze(1),(noise*torch.eye(xBatch.size(0)).unsqueeze(2)).repeat(1,1,batchsize)],dim=1)))
+                outputs = model(core.Zonotope(torch.cat([xBatch.unsqueeze(1),(noise*torch.eye(xBatch.size(0),device=xBatch.device).unsqueeze(2)).repeat(1,1,batchsize)],dim=1)))
                 yBatch = core.Zonotope(yTrain[:,indxShuffled[itter*batchsize:(itter+1)*batchsize]])
             else:
                 outputs = model(xBatch.t())
-                yBatch = torch.as_tensor(yTrain[:,indxShuffled[itter*batchsize:(itter+1)*batchsize]],dtype=torch.float32).t()
+                yBatch = yTrain[:,indxShuffled[itter*batchsize:(itter+1)*batchsize]].t()
 
             lossVal = loss(outputs,yBatch)
             lossVal.backward()

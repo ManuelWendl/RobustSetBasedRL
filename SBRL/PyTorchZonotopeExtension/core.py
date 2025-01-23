@@ -177,16 +177,16 @@ class ZonotopeReLU(torch.autograd.Function):
         u = c + torch.abs(G).sum(1).unsqueeze(1)
         l = c - torch.abs(G).sum(1).unsqueeze(1)
 
-        m = torch.zeros(l.shape)
+        m = torch.zeros(l.shape,device=c.device)
         m[(l>0)*(u>0)] = 1
         m[(l<0)*(u>0)] = u[(l<0)*(u>0)]/(u[(l<0)*(u>0)]-l[(l<0)*(u>0)])
 
         # Save slope for backprop
         ctx.save_for_backward(m)
 
-        t = torch.zeros(l.shape)
+        t = torch.zeros(l.shape,device=c.device)
         t[(l<0)*(u>0)] = (-l[(l<0)*(u>0)]*u[(l<0)*(u>0)])/(2*(u[(l<0)*(u>0)]-l[(l<0)*(u>0)]))
-        d = (t.permute(2,0,1)*torch.eye(t.size(0))).permute(1,2,0)
+        d = (t.permute(2,0,1)*torch.eye(t.size(0),device=c.device)).permute(1,2,0)
         
         output = torch.add(torch.mul(m,input),Zonotope(torch.cat([t,d],1)))
         return output
