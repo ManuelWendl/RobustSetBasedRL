@@ -26,7 +26,7 @@ class Zonotope(torch.Tensor):
     - _batchsize: third dimension of tensor (if multiple zonotopes are stored)
     '''
     def __init__(self, value):
-        self._tensor = torch.as_tensor(value,dtype=torch.float)
+        self._tensor = torch.as_tensor(value,dtype=value.dtype)
         if self._tensor.dim() == 1:
             self._tensor = self._tensor.unsqueeze(0)
             
@@ -120,10 +120,15 @@ def relu(input,inplace):
     """Implements the Affine Map of Zonotopes"""
     return ZonotopeReLU.apply(input)
 
-@implements(torch.nn.functional.tanh)
+@implements(torch.tanh)
 def tanh(input):
     """Implements the Affine Map of Zonotopes"""
     return ZonotopeTanh.apply(input)
+
+@implements(torch.nn.functional.softmax)
+def softmax(input, dim, **kwargs):
+    """Implements the Affine Map of Zonotopes"""
+    return ZonotopeSoftmax.apply(input)
 
 class ZonotopeLinear(torch.autograd.Function):
     """
@@ -221,7 +226,10 @@ class ZonotopeTanh(torch.autograd.Function):
         m = (torch.tanh(u)-torch.tanh(l))/(u-l)
         ctx.save_for_backward(m)
 
-        t = 1/(u-l)*torch.log(torch.cosh(u)/torch.cosh(l))-m*c
+        r = torch.cosh(u)/torch.cosh(l)
+        r = torch.where(r.isnan(), torch.tensor(1.0, device=r.device), r)
+
+        t = 1/(u-l)*torch.log(r)-m*c
 
         # Find approximation error
         x1 = torch.arctanh(torch.sqrt(1-m))
@@ -230,10 +238,11 @@ class ZonotopeTanh(torch.autograd.Function):
         x1[x1<l] = l[x1<l]
         x2[x2>u] = u[x2>u]
         x2[x2<l] = l[x2<l]
-        x = torch.stack([l,u,x1,x2],dim=1)
+
+        x = torch.cat([l,u,x1,x2],dim=1)
 
         d = torch.max(torch.abs(torch.tanh(x)-(m*x+t)),axis=1)
-        d = (t.permute(2,0,1)*torch.eye(t.size(0))).permute(1,2,0)
+        d = (t.permute(2,0,1)*torch.eye(t.size(0),device=c.device)).permute(1,2,0)
 
         output = torch.add(torch.mul(m,input),Zonotope(torch.cat([t,d],1)))
         return output
@@ -242,6 +251,42 @@ class ZonotopeTanh(torch.autograd.Function):
     def backward(ctx, grad_output):
         m = ctx.saved_tensors[0]
         grad_input = torch.mul(m,grad_output)
+        grad_input = Zonotope(grad_input._tensor[:,0:-grad_input._dim,...])
+        return grad_input
+    
+class ZonotopeSoftmax(torch.autograd.Function):
+    """
+    ZonotopeSoftmax: Softmax layer for Zonotopes
+    ===========================================
+
+    This class implemets the Softmax layer for zonotopes using the fast image enclosure
+
+    Functions:
+    ----------
+    - forward: Forward pass
+    - backward: Backward Propagation
+    """
+    @staticmethod
+    def forward(ctx,input):
+        c = input.getCenter()
+        G = input.getGenerators()
+
+        u = c + torch.abs(G).sum(1).unsqueeze(1)
+        l = c - torch.abs(G).sum(1).unsqueeze(1)
+
+        m = torch.nn.functional.softmax(u,dim=0)-torch.nn.functional.softmax(l,dim=0)
+        ctx.save_for_backward(m)
+
+        t = torch.nn.functional.log_softmax(u,dim=0)-torch.nn.functional.log_softmax(l,dim=0)-m*c
+
+        output = torch.add(torch.mul(m,input),Zonotope(torch.cat([t,torch.zeros(t.size(0),t.size(0),t.size(2),device=c.device)],1)))
+        return output
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        m = ctx.saved_tensors[0]
+        grad_input = torch.mul(m,grad_output)
+        grad_input = Zonotope(grad_input._tensor[:,0:-grad_input._dim,...])
         return grad_input
     
 class ZRL(torch.autograd.Function):
@@ -288,4 +333,53 @@ class ZonotopeRegressionLoss(torch.nn.Module):
 
     def forward(self, output, target):
         loss = ZRL.apply(output, target, self.eta, self.noise)
+        return loss
+    
+
+class ZCL(torch.autograd.Function):
+    """"
+    ZCL (Zonotope Classification Loss): 
+    ===============================
+
+    Implementation of set-based classification loss for zonotopes. 
+    It simultaneously trains the cross entropy classification loss and penalizes the size of the zonotope.
+
+    Functions:
+    - forward: Computation of set-based classification loss with parameters eta and noise
+    - backward: Backward propagation
+    """
+    @staticmethod
+    def forward(ctx, output, target, eta, noise):
+        ctx.save_for_backward(output,target)
+        ctx.eta = eta
+        ctx.noise = noise
+        output_center = torch.reshape(output.getCenter(),(-1,output._dim))
+        cLoss = 1/output._batchSize*torch.nn.functional.cross_entropy(output_center,target._tensor.squeeze())
+        GLoss = eta/noise*torch.log(2*torch.sum(torch.abs(output.getGenerators())))
+        if (GLoss<-1000).any():
+            GLoss[GLoss<-1000] = -1000
+        loss = 1/output._batchSize*(cLoss+GLoss)
+        return loss
+    
+    @staticmethod
+    def backward(ctx,loss):
+        output,target = ctx.saved_tensors
+        output_center = torch.reshape(output.getCenter(),(-1,output._dim))
+        gradient_center = (torch.softmax(output_center,dim=1)-torch.nn.functional.one_hot(target._tensor.squeeze(), num_classes=output._dim)).reshape(output._dim,1,-1)
+        radius = torch.abs(output.getGenerators()).sum(1).unsqueeze(1)
+        mask = radius>0
+        radius[radius==0] = 1
+        gradient_generators = 1/output._batchSize*mask*ctx.eta/ctx.noise*torch.sign(output.getGenerators())/radius
+        gradient = Zonotope(torch.cat([gradient_center,gradient_generators],dim=1))
+        return gradient, None, None, None
+
+class ZonotopeClassificationLoss(torch.nn.Module):
+    """Implements the set-base classification loss"""
+    def __init__(self, eta, noise):
+        super().__init__()
+        self.eta = eta
+        self.noise = noise
+
+    def forward(self, output, target):
+        loss = ZCL.apply(output, target, self.eta, self.noise)
         return loss

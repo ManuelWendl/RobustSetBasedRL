@@ -1,6 +1,6 @@
 """
-PyTorch Zonotope Extension:
-===========================
+PyTorch Zonotope:
+=================
 
 This package extends pytorch to zonotopes and introduces set-based neural network training. 
 
@@ -10,8 +10,8 @@ Modules:
 - functions: Implements functions for neural network training
 """
 
-from SBRL.PyTorchZonotopeExtension import core
-from SBRL.PyTorchZonotopeExtension import functions
+from SBML.PyTorchZonotope import core
+from SBML.PyTorchZonotope import functions
 
 __all__ = [
     "core",
