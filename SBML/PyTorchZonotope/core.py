@@ -274,10 +274,11 @@ class ZonotopeSoftmax(torch.autograd.Function):
         u = c + torch.abs(G).sum(1).unsqueeze(1)
         l = c - torch.abs(G).sum(1).unsqueeze(1)
 
-        m = torch.nn.functional.softmax(u,dim=0)-torch.nn.functional.softmax(l,dim=0)
+        m = (torch.nn.functional.softmax(u,dim=0)-torch.nn.functional.softmax(l,dim=0))/(u-l)
+        m = torch.where(m.isnan(), torch.tensor(0.0, device=m.device), m)
         ctx.save_for_backward(m)
 
-        t = torch.nn.functional.log_softmax(u,dim=0)-torch.nn.functional.log_softmax(l,dim=0)-m*c
+        t = 1/2*((torch.nn.functional.softmax(u,dim=0)+torch.nn.functional.softmax(l,dim=0))-m*c)
 
         output = torch.add(torch.mul(m,input),Zonotope(torch.cat([t,torch.zeros(t.size(0),t.size(0),t.size(2),device=c.device)],1)))
         return output
@@ -367,9 +368,9 @@ class ZCL(torch.autograd.Function):
         output_center = torch.reshape(output.getCenter(),(-1,output._dim))
         gradient_center = (torch.softmax(output_center,dim=1)-torch.nn.functional.one_hot(target._tensor.squeeze(), num_classes=output._dim)).reshape(output._dim,1,-1)
         radius = torch.abs(output.getGenerators()).sum(1).unsqueeze(1)
-        mask = radius>0
-        radius[radius==0] = 1
-        gradient_generators = 1/output._batchSize*mask*ctx.eta/ctx.noise*torch.sign(output.getGenerators())/radius
+        gradient_generators = 1/output._batchSize*ctx.eta*ctx.noise*torch.sign(output.getGenerators())/radius
+        gradient_generators[gradient_generators.isnan()] = 0
+        gradient_generators = torch.clamp(gradient_generators,-1e13,1e13)
         gradient = Zonotope(torch.cat([gradient_center,gradient_generators],dim=1))
         return gradient, None, None, None
 

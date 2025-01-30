@@ -1,4 +1,4 @@
-from SBML.PyTorchZonotope import core
+from SBML.PyTorchZonotope.core import *
 import torch
 import math
 import time
@@ -39,8 +39,8 @@ def train(model,loss,optimizer,xTrain,yTrain,epochs,batchsize=64,noise=0.0,verbo
             optimizer.zero_grad()
             if noise > 0:
                 xBatch = xBatch.t()
-                outputs = model(core.Zonotope(torch.cat([xBatch.unsqueeze(1),(noise*torch.eye(xBatch.size(0),device=xBatch.device).unsqueeze(2)).repeat(1,1,batchsize)],dim=1)))
-                yBatch = core.Zonotope(yTrain[indxShuffled[itter*batchsize:(itter+1)*batchsize],...].t())
+                outputs = model(Zonotope(torch.cat([xBatch.unsqueeze(1),(noise*torch.eye(xBatch.size(0),device=xBatch.device).unsqueeze(2)).repeat(1,1,batchsize)],dim=1)))
+                yBatch = Zonotope(yTrain[indxShuffled[itter*batchsize:(itter+1)*batchsize],...].t())
             else:
                 outputs = model(xBatch)
                 yBatch = yTrain[indxShuffled[itter*batchsize:(itter+1)*batchsize],...]
