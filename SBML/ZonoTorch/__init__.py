@@ -1,6 +1,6 @@
 """
-PyTorch Zonotope:
-=================
+ZonoTorch:
+==========
 
 This package extends pytorch to zonotopes and introduces set-based neural network training. 
 
@@ -12,10 +12,10 @@ Modules:
 - losses: implements a set-based regression and classification loss
 """
 
-from SBML.PyTorchZonotope import train
-from SBML.PyTorchZonotope import layers
-from SBML.PyTorchZonotope import set
-from SBML.PyTorchZonotope import losses
+from SBML.ZonoTorch import train
+from SBML.ZonoTorch import layers
+from SBML.ZonoTorch import set
+from SBML.ZonoTorch import losses
 
 
 __all__ = [
