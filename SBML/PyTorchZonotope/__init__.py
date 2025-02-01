@@ -6,14 +6,21 @@ This package extends pytorch to zonotopes and introduces set-based neural networ
 
 Modules:
 ---------
-- core: All basic Zonotope implementations are contained in core
-- functions: Implements functions for neural network training
+- train: contains train function for set-based nn training
+- layers: implements the different set-based nn layers
+- set: contains the zonotope class as set description
+- losses: implements a set-based regression and classification loss
 """
 
-from SBML.PyTorchZonotope import core
-from SBML.PyTorchZonotope import functions
+from SBML.PyTorchZonotope import train
+from SBML.PyTorchZonotope import layers
+from SBML.PyTorchZonotope import set
+from SBML.PyTorchZonotope import losses
+
 
 __all__ = [
-    "core",
-    "functions"
+    "train",
+    "layers",
+    "set",
+    "losses"
 ]

@@ -1,4 +1,5 @@
-from SBML.PyTorchZonotope.core import *
+from .core import *
+from .losses import *
 import torch
 import math
 import time
