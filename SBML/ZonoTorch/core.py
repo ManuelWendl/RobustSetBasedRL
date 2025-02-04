@@ -5,11 +5,12 @@ from .losses import *
 
 @implements(torch.add)
 def add(input, other):
-    """Implements the Minkowsky sum of Zonotopes"""
-    if input._dim == other._dim and input._batchSize == other._batchSize:
-        return Zonotope(torch.cat([input.getCenter()+other.getCenter(),input.getGenerators(),other.getGenerators()],dim=1))
-    else:
-        raise ValueError("Shape mismatch of added Zonotopes. Dimensions={}, Batchsizes={}".format([input._dim,other._dim],[input._batchSize,other._batchSize]))
+    if isinstance(input,Zonotope) and isinstance(other,Zonotope):
+        """Implements the Minkowsky sum of Zonotopes"""
+        if input._dim == other._dim and input._batchSize == other._batchSize:
+            return Zonotope(torch.cat([input.getCenter()+other.getCenter(),input.getGenerators(),other.getGenerators()],dim=1))
+        else:
+            raise ValueError("Shape mismatch of added Zonotopes. Dimensions={}, Batchsizes={}".format([input._dim,other._dim],[input._batchSize,other._batchSize]))
 
 @implements(torch.mul)
 def mul(A,B,out=None):
@@ -43,13 +44,18 @@ def cartesian_prod(input, other):
     if input._batchSize == other._batchSize:
         diffGenerators = input._numGenerators - other._numGenerators
         if diffGenerators > 0:
-            otherPadded = torch.cat([other._tensor,torch.zeros(other._dim,diffGenerators,other._batchSize)],1)
+            otherPadded = torch.cat([other._tensor,torch.zeros(other._dim,diffGenerators,other._batchSize).to(device=other._tensor.device)],1)
             return Zonotope(torch.cat([input._tensor,otherPadded],0))
         else:
-            inputPadded = torch.cat([input._tensor,torch.zeros(input._dim,-diffGenerators,input._batchSize)],1)
+            inputPadded = torch.cat([input._tensor,torch.zeros(input._dim,-diffGenerators,input._batchSize).to(device=input._tensor.device)],1)
             return Zonotope(torch.cat([inputPadded,other._tensor],0))
     else:
         raise ValueError("Batchsize mismatch of added Zonotope Batches.") 
+    
+@implements(torch.clamp)
+def clamp(input, min, max):
+    """Implements the Clamping of Zonotopes. Only clamp the zonotope center"""
+    return Zonotope(torch.cat([torch.clamp(input.getCenter(),min,max),input.getGenerators()],dim=1))
     
 @implements(torch.nn.functional.linear)
 def linear(input,weight,bias):
