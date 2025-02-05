@@ -43,11 +43,9 @@ class ActorCritic(ABC):
         self.options = self.__validateOptions(options)
 
         assert isinstance(actor, torch.nn.Sequential)
-        #self.__xavierInit(actor)
         self.actor = actor.to(device)
 
         assert isinstance(critic, torch.nn.Sequential)
-        #self.__xavierInit(critic)
         self.critic = critic.to(device)
 
         self.actor_optim = torch.optim.Adam(self.actor.parameters(), lr=options['actor_lr'], weight_decay=options['actor_l2'])

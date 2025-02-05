@@ -92,6 +92,8 @@ class DDPG(ActorCritic):
         with torch.no_grad():   
             next_target_action = self.target_actor(next_states)
             target_q = self.target_critic(torch.cat([next_states,next_target_action],dim=1))
+            if target_q.isnan().any():
+                raise ValueError("NaN in target Q values.")
             target = rewards + self.options['gamma'] * target_q * (1 - dones)
 
         critic_loss = self.train_critic(states,actions,target)
@@ -112,14 +114,23 @@ class DDPG(ActorCritic):
         
     def train_actor(self,states):
         """Trains the actor network"""
+        self.actor_optim.zero_grad()
+        actions = self.actor(states)
         if self.options['actor_train_mode'] == 'set':
             assert isinstance(states,Zonotope)
-            actions = self.actor(states)
-            loss = self.actor_loss(actions, states, self.critic)
+            if self.options['critic_train_mode'] == 'set':
+                q_val = self.critic(torch.functional.cartesian_prod(states,actions))
+            elif self.options['critic_train_mode'] == 'point':
+                action_center = actions.getCenter().reshape(-1,actions._dim)
+                states_center = states.getCenter().reshape(-1,states._dim)
+                q_val = self.critic(torch.cat([states_center,action_center],dim=1))
+            else:
+                raise ValueError('Critic training only implemented point or set.')
+            
+            loss = self.actor_loss(actions, q_val)
 
         elif self.options['actor_train_mode'] in ['point','adv_naive','adv_grad']:
             self.actor_optim.zero_grad()
-            actions = self.actor(states)
             q_val = self.critic(torch.cat([states,actions],dim=1))
             loss = -q_val.mean()
         else:
@@ -132,7 +143,7 @@ class DDPG(ActorCritic):
     def soft_update(self,net,net_target):
         """Soft update of the target network"""
         for param, target_param in zip(net.parameters(),net_target.parameters()):
-            target_param.data.copy_(self.options['tau'] * param.data + (1 - self.options['tau']) * target_param.data)
+            target_param.data = target_param.data * (1 - self.options['tau']) + param.data * self.options['tau']
         
     
     def __validateDDPGOptions(self,options):

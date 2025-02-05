@@ -18,7 +18,10 @@ class Zonotope(torch.Tensor):
     - _batchsize: third dimension of tensor (if multiple zonotopes are stored)
     '''
     def __init__(self, value):
-        self._tensor = torch.as_tensor(value,dtype=value.dtype)
+        if value.requires_grad:
+            self._tensor = torch.as_tensor(value,dtype=value.dtype,device=value.device).requires_grad_()
+        else:
+            self._tensor = torch.as_tensor(value,dtype=value.dtype,device=value.device)
         if self._tensor.dim() == 1:
             self._tensor = self._tensor.unsqueeze(0)
             

@@ -96,12 +96,8 @@ class ZonotopeTanh(torch.autograd.Function):
         l = c - torch.abs(G).sum(1).unsqueeze(1)
 
         m = (torch.tanh(u)-torch.tanh(l))/(u-l)
+        m = torch.where(m.isnan(), torch.tensor(0.0, device=m.device, dtype=m.dtype), m)
         ctx.save_for_backward(m)
-
-        r = torch.cosh(u)/torch.cosh(l)
-        r = torch.where(r.isnan(), torch.tensor(1.0, device=r.device), r)
-
-        t = 1/(u-l)*torch.log(r)-m*c
 
         # Find approximation error
         x1 = torch.arctanh(torch.sqrt(1-m))
@@ -113,8 +109,10 @@ class ZonotopeTanh(torch.autograd.Function):
 
         x = torch.cat([l,u,x1,x2],dim=1)
 
-        d = torch.max(torch.abs(torch.tanh(x)-(m*x+t)),axis=1)
-        d = (t.permute(2,0,1)*torch.eye(t.size(0),device=c.device)).permute(1,2,0)
+        du = torch.max(torch.tanh(x)-(m*x),axis=1).values.unsqueeze(1)
+        dl = torch.min(torch.tanh(x)-(m*x),axis=1).values.unsqueeze(1)
+        t = 1/2*(du+dl)
+        d = 1/2*(du-dl)
 
         output = torch.add(torch.mul(m,input),Zonotope(torch.cat([t,d],1)))
         return output
@@ -150,8 +148,8 @@ class ZonotopeSoftmax(torch.autograd.Function):
         m = torch.where(m.isnan(), torch.tensor(0.0, device=m.device), m)
         ctx.save_for_backward(m)
 
-        t = 1/2*((torch.nn.functional.softmax(u,dim=0)+torch.nn.functional.softmax(l,dim=0))-m*c)
-
+        t = 1/2*(1/2*(torch.nn.functional.softmax(u,dim=0)+torch.nn.functional.softmax(l,dim=0))-m*c)
+        
         output = torch.add(torch.mul(m,input),Zonotope(torch.cat([t,torch.zeros(t.size(0),t.size(0),t.size(2),device=c.device)],1)))
         return output
 

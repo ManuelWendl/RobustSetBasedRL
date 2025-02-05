@@ -1,5 +1,5 @@
 import torch
-from .core import Zonotope, cartesian_prod
+from .set import Zonotope
 
 class ZonotopeRegressionLoss(torch.nn.Module):
     """Implements the set-base regression loss"""
@@ -68,6 +68,7 @@ class ZRL(torch.autograd.Function):
         gradient_generators[gradient_generators.isnan()] = 0
         gradient_generators = torch.clamp(gradient_generators,-1e6,1e6)
         gradient = Zonotope(torch.cat([gradient_center,gradient_generators],dim=1))
+
         return gradient, None, None, None
     
 class ZCL(torch.autograd.Function):
@@ -101,7 +102,7 @@ class ZCL(torch.autograd.Function):
         output_center = torch.reshape(output.getCenter(),(-1,output._dim))
         gradient_center = (torch.softmax(output_center,dim=1)-torch.nn.functional.one_hot(target._tensor.squeeze(), num_classes=output._dim)).reshape(output._dim,1,-1)
         radius = torch.abs(output.getGenerators()).sum(1).unsqueeze(1)
-        gradient_generators = 1/output._batchSize*ctx.eta*ctx.noise*torch.sign(output.getGenerators())/radius
+        gradient_generators = 1/output._batchSize*ctx.eta/ctx.noise*torch.sign(output.getGenerators())/radius
         gradient_generators[gradient_generators.isnan()] = 0
         gradient_generators = torch.clamp(gradient_generators,-1e6,1e6)
         gradient = Zonotope(torch.cat([gradient_center,gradient_generators],dim=1))
@@ -110,56 +111,73 @@ class ZCL(torch.autograd.Function):
 class ZPG(torch.autograd.Function):
     """
     ZPG (Zonotope Policy Gradient):
-    ===============================
 
-    Implementation of set-based policy gradient loss for zonotopes.
-    It simultaneously trains the policy gradient loss and penalizes the size of the zonotope.
-
-    Functions:
-    - forward: Computation of set-based policy gradient loss with parameters eta, omega and noise
-    - backward: Backward propagation
+    Implements a set-based policy gradient loss that penalizes both the critic’s output (via its zonotope center)
+    and the “size” of the zonotopes (via the generators). The gradients w.r.t. the center and generators are computed independently.
+    
+    Note: To backpropagate through the critic branch (i.e. through q_value), we need to be able to re-run the critic.
+          In this example, we assume that `states` and `critic` do not require custom gradient treatment and that
+          actions (a Zonotope) is the only argument we treat specially.
     """
-
+    
     @staticmethod
-    def forward(ctx, actions, states, critic, eta, omega, noise):
-        ctx.save_for_backward(actions)
+    def forward(ctx, action, q_value, eta, omega, noise):
+        
+        ctx.save_for_backward(action, q_value)
         ctx.eta = eta
         ctx.omega = omega
         ctx.noise = noise
-
-        q_value = critic(cartesian_prod(states,actions))
-
-        if isinstance(q_value,Zonotope):
-            GLoss = eta/noise*((1-omega)*torch.log(2*torch.sum(torch.abs(actions.getGenerators()))) + omega*torch.log(2*torch.sum(torch.abs(q_value.getGenerators()))))
-            q = torch.reshape(q_value.getCenter(),(-1,1))
+        
+        if isinstance(q_value, Zonotope):
+            GLoss = (eta/noise) * (
+                        (1-omega)*torch.log(2*torch.sum(torch.abs(action.getGenerators()))) +
+                        omega*torch.log(2*torch.sum(torch.abs(q_value.getGenerators())))
+                    )
+            q = torch.reshape(q_value.getCenter(), (-1, 1))
         else:
             q = q_value
-            GLoss = eta/noise*torch.log(2*torch.sum(torch.abs(actions.getGenerators())))
+            GLoss = (eta/noise) * torch.log(2*torch.sum(torch.abs(action.getGenerators())))
+        
         cLoss = -q
-        if (GLoss<-1000).any():
-            GLoss[GLoss<-1000] = -1000
-        loss = 1/actions._batchSize*torch.sum(cLoss+GLoss)
+        GLoss = torch.where(GLoss < -1000, torch.full_like(GLoss, -1000), GLoss)
+        loss = (1 / action._batchSize) * torch.sum(cLoss + GLoss)
         return loss
 
-    # TODO Implement backward
     @staticmethod
     def backward(ctx, grad_output):
-        actions, states = ctx.saved_tensors
-        critic = ctx.critic
+        """
+        Backward propagation for the ZPG loss.
+
+        We must return gradients for each input to forward:
+          - grad_actions: gradients for the actor’s zonotope (Zonotope underlying tensor)
+          - None for states, critic, eta, omega, and noise (assuming we do not update them with this loss)
+        """
+        action, q_value = ctx.saved_tensors
         eta = ctx.eta
         omega = ctx.omega
         noise = ctx.noise
-
-        # Compute gradients for actions
-        q_value = critic(cartesian_prod(states, actions))
+        B = action._batchSize  
+        
         if isinstance(q_value, Zonotope):
-            dGLoss_dActions = eta / noise * ((1 - omega) * (1 / torch.sum(torch.abs(actions.getGenerators()))) * torch.sign(actions.getGenerators()))
-            dGLoss_dQ = eta / noise * omega * (1 / torch.sum(torch.abs(q_value.getGenerators()))) * torch.sign(q_value.getGenerators())
-            dQ_dActions = torch.autograd.grad(q_value.getCenter(), actions, grad_outputs=dGLoss_dQ, retain_graph=True)[0]
-            dLoss_dActions = -1 / actions._batchSize * (1 + dGLoss_dActions + dQ_dActions)
+            grad_center = -1 / B * torch.ones_like(q_value.getCenter())
+            radius_q = torch.sum(torch.abs(q_value.getGenerators()))
+            grad_q_gen = (1 / B)*(eta/noise)*omega * (torch.sign(q_value.getGenerators()) / radius_q)
+            grad_q_gen[grad_q_gen.isnan()] = 0
+            grad_q_gen = torch.clamp(grad_q_gen, -1e6, 1e6)
+            grad_q = Zonotope(torch.cat([grad_center, grad_q_gen], dim=1))
         else:
-            dGLoss_dActions = eta / noise * (1 / torch.sum(torch.abs(actions.getGenerators()))) * torch.sign(actions.getGenerators())
-            dLoss_dActions = -1 / actions._batchSize * (1 + dGLoss_dActions)
+            grad_q = -1 / B * torch.ones_like(q_value)
+        
 
-        return dLoss_dActions, None, None, None, None, None
+        A_gens = action.getGenerators()
+        radius_a = torch.sum(torch.abs(A_gens))
+        grad_A_gens = (1 / B)*(eta/noise)*(1-omega) * (torch.sign(A_gens) / radius_a)
+        grad_A_gens[grad_A_gens.isnan()] = 0
+        grad_A_gens = torch.clamp(grad_A_gens, -1e6, 1e6)
+        grad_A_center = torch.zeros_like(action.getCenter())
+        grad_action = Zonotope(torch.cat([grad_A_center, grad_A_gens], dim=1))
+
+        return grad_action, grad_q, None, None, None
+
+        
         
