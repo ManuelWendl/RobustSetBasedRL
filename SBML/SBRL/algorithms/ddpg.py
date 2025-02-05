@@ -48,7 +48,7 @@ class DDPG(ActorCritic):
         self.exploration = torch.zeros((self.action_dim,1)).to(device)
         self.target_actor = deepcopy(self.actor).to(device)
         self.target_critic = deepcopy(self.critic).to(device)
-        self.actor_loss = ZonotopePolicyGradient(self.options['actor_eta'],self.options['actor_omega'],self.options['noise'])
+        self.actor_loss = self.ZonotopePolicyGradient(self.options['actor_eta'],self.options['actor_omega'],self.options['noise'])
 
     def act(self,state):
         """Returns the action for a given state acting with the environment and gaining experience"""

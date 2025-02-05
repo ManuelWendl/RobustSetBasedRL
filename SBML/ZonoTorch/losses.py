@@ -107,6 +107,9 @@ class ZCL(torch.autograd.Function):
         gradient_generators = torch.clamp(gradient_generators,-1e6,1e6)
         gradient = Zonotope(torch.cat([gradient_center,gradient_generators],dim=1))
         return gradient, None, None, None
+    
+def radius(zonotope):
+        return torch.sum(torch.abs(zonotope.getGenerators()))
             
 class ZPG(torch.autograd.Function):
     """
@@ -130,13 +133,13 @@ class ZPG(torch.autograd.Function):
         
         if isinstance(q_value, Zonotope):
             GLoss = (eta/noise) * (
-                        (1-omega)*torch.log(2*torch.sum(torch.abs(action.getGenerators()))) +
-                        omega*torch.log(2*torch.sum(torch.abs(q_value.getGenerators())))
-                    )
+                        (1-omega)*torch.log(2*radius(action)) +
+                        omega*torch.log(2*radius(q_value))
+                    ).reshape(-1, 1)
             q = torch.reshape(q_value.getCenter(), (-1, 1))
         else:
-            q = q_value
-            GLoss = (eta/noise) * torch.log(2*torch.sum(torch.abs(action.getGenerators())))
+            q = q_value.reshape(-1, 1)
+            GLoss = (eta/noise) * torch.log(2*torch.sum(torch.abs(action.getGenerators()))).reshape(-1, 1)
         
         cLoss = -q
         GLoss = torch.where(GLoss < -1000, torch.full_like(GLoss, -1000), GLoss)
@@ -160,18 +163,14 @@ class ZPG(torch.autograd.Function):
         
         if isinstance(q_value, Zonotope):
             grad_center = -1 / B * torch.ones_like(q_value.getCenter())
-            radius_q = torch.sum(torch.abs(q_value.getGenerators()))
-            grad_q_gen = (1 / B)*(eta/noise)*omega * (torch.sign(q_value.getGenerators()) / radius_q)
+            grad_q_gen = (1 / B)*(eta/noise)*omega * (torch.sign(q_value.getGenerators()) / radius(q_value))
             grad_q_gen[grad_q_gen.isnan()] = 0
             grad_q_gen = torch.clamp(grad_q_gen, -1e6, 1e6)
             grad_q = Zonotope(torch.cat([grad_center, grad_q_gen], dim=1))
         else:
             grad_q = -1 / B * torch.ones_like(q_value)
         
-
-        A_gens = action.getGenerators()
-        radius_a = torch.sum(torch.abs(A_gens))
-        grad_A_gens = (1 / B)*(eta/noise)*(1-omega) * (torch.sign(A_gens) / radius_a)
+        grad_A_gens = (1 / B)*(eta/noise)*(1-omega) * (torch.sign(action.getGenerators()) / radius(action))
         grad_A_gens[grad_A_gens.isnan()] = 0
         grad_A_gens = torch.clamp(grad_A_gens, -1e6, 1e6)
         grad_A_center = torch.zeros_like(action.getCenter())
