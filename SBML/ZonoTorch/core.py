@@ -41,16 +41,7 @@ def tensordot(A, B, dims, out=None):
 @implements(torch.cartesian_prod)
 def cartesian_prod(input, other):
     """Implements the Cartesian Product of Zonotopes"""
-    if input._batchSize == other._batchSize:
-        diffGenerators = input._numGenerators - other._numGenerators
-        if diffGenerators > 0:
-            otherPadded = torch.cat([other._tensor,torch.zeros(other._dim,diffGenerators,other._batchSize).to(device=other._tensor.device)],1)
-            return Zonotope(torch.cat([input._tensor,otherPadded],0))
-        else:
-            inputPadded = torch.cat([input._tensor,torch.zeros(input._dim,-diffGenerators,input._batchSize).to(device=input._tensor.device)],1)
-            return Zonotope(torch.cat([inputPadded,other._tensor],0))
-    else:
-        raise ValueError("Batchsize mismatch of added Zonotope Batches.") 
+    return ZonotopeCartesian.apply(input,other)
     
 @implements(torch.clamp)
 def clamp(input, min, max):

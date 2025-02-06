@@ -31,8 +31,8 @@ class ZonotopePolicyGradient(torch.nn.Module):
         self.omega = omega
         self.noise = noise
 
-    def forward(self, action, q_val):
-        loss = ZPG.apply(action, q_val, self.eta, self.omega, self.noise)
+    def forward(self, q_val):
+        loss = ZPG.apply(q_val, self.eta, self.omega, self.noise)
         return loss
 
 class ZRL(torch.autograd.Function):
@@ -124,26 +124,19 @@ class ZPG(torch.autograd.Function):
     """
     
     @staticmethod
-    def forward(ctx, action, q_value, eta, omega, noise):
+    def forward(ctx, q_value, eta, omega, noise):
         
-        ctx.save_for_backward(action, q_value)
+        ctx.save_for_backward(q_value)
         ctx.eta = eta
         ctx.omega = omega
         ctx.noise = noise
         
-        if isinstance(q_value, Zonotope):
-            GLoss = (eta/noise) * (
-                        (1-omega)*torch.log(2*radius(action)) +
-                        omega*torch.log(2*radius(q_value))
-                    ).reshape(-1, 1)
-            q = torch.reshape(q_value.getCenter(), (-1, 1))
-        else:
-            q = q_value.reshape(-1, 1)
-            GLoss = (eta/noise) * torch.log(2*torch.sum(torch.abs(action.getGenerators()))).reshape(-1, 1)
+        GLoss = (eta/noise) * omega*torch.log(2*radius(q_value)).reshape(-1, 1)
+        q = torch.reshape(q_value.getCenter(), (-1, 1))
         
         cLoss = -q
         GLoss = torch.where(GLoss < -1000, torch.full_like(GLoss, -1000), GLoss)
-        loss = (1 / action._batchSize) * torch.sum(cLoss + GLoss)
+        loss = (1 / q_value._batchSize) * torch.sum(cLoss + GLoss)
         return loss
 
     @staticmethod
@@ -155,28 +148,21 @@ class ZPG(torch.autograd.Function):
           - grad_actions: gradients for the actor’s zonotope (Zonotope underlying tensor)
           - None for states, critic, eta, omega, and noise (assuming we do not update them with this loss)
         """
-        action, q_value = ctx.saved_tensors
+        q_value, = ctx.saved_tensors
         eta = ctx.eta
         omega = ctx.omega
         noise = ctx.noise
-        B = action._batchSize  
+        B = q_value._batchSize  
         
-        if isinstance(q_value, Zonotope):
-            grad_center = -1 / B * torch.ones_like(q_value.getCenter())
-            grad_q_gen = (1 / B)*(eta/noise)*omega * (torch.sign(q_value.getGenerators()) / radius(q_value))
-            grad_q_gen[grad_q_gen.isnan()] = 0
-            grad_q_gen = torch.clamp(grad_q_gen, -1e6, 1e6)
-            grad_q = Zonotope(torch.cat([grad_center, grad_q_gen], dim=1))
-        else:
-            grad_q = -1 / B * torch.ones_like(q_value)
+        grad_center = -1 / B * torch.ones_like(q_value.getCenter())
+        grad_q_gen = (1 / B)*(eta/noise)*omega * (torch.sign(q_value.getGenerators()) / radius(q_value))
+        grad_q_gen[grad_q_gen.isnan()] = 0
+        grad_q_gen = torch.clamp(grad_q_gen, -1e6, 1e6)
+        z_grad_q = torch.cat([grad_center, grad_q_gen], dim=1)
         
-        grad_A_gens = (1 / B)*(eta/noise)*(1-omega) * (torch.sign(action.getGenerators()) / radius(action))
-        grad_A_gens[grad_A_gens.isnan()] = 0
-        grad_A_gens = torch.clamp(grad_A_gens, -1e6, 1e6)
-        grad_A_center = torch.zeros_like(action.getCenter())
-        grad_action = Zonotope(torch.cat([grad_A_center, grad_A_gens], dim=1))
+        grad_q = Zonotope(z_grad_q)
 
-        return grad_action, grad_q, None, None, None
+        return grad_q, None, None, None, None
 
         
         

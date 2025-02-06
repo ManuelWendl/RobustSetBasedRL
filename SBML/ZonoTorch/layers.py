@@ -152,6 +152,7 @@ class ZonotopeSoftmax(torch.autograd.Function):
         
         output = torch.add(torch.mul(m,input),Zonotope(torch.cat([t,torch.zeros(t.size(0),t.size(0),t.size(2),device=c.device)],1)))
         return output
+    
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -159,3 +160,48 @@ class ZonotopeSoftmax(torch.autograd.Function):
         grad_input = torch.mul(m,grad_output)
         grad_input = Zonotope(grad_input._tensor[:,0:-grad_input._dim,...])
         return grad_input
+    
+class ZonotopeCartesian(torch.autograd.Function):
+    """
+    ZonotopeCartesian: Cartesian Product of Zonotopes
+    ================================================
+    
+    This class implements the Cartesian Product of Zonotopes with gradient preservation.
+    
+    Functions:
+    ----------
+    - forward: Forward pass
+    - backward: Backward pass
+    """
+    @staticmethod
+    def forward(ctx, input, other):
+        """Forward pass of the Cartesian Product"""
+        if input._batchSize != other._batchSize:
+            raise ValueError("Batchsize mismatch of added Zonotope Batches.")
+        diffGenerators = input._numGenerators - other._numGenerators
+        if diffGenerators > 0:
+            otherPadded = torch.cat([
+                other._tensor, 
+                torch.zeros(other._dim, diffGenerators, other._batchSize, 
+                            device=other._tensor.device, dtype=other._tensor.dtype, 
+                            requires_grad=other._tensor.requires_grad)
+            ], dim=1)
+            output = Zonotope(torch.cat([input._tensor, otherPadded], dim=0))
+        else:
+            inputPadded = torch.cat([
+                input._tensor, 
+                torch.zeros(input._dim, -diffGenerators, input._batchSize, 
+                            device=input._tensor.device, dtype=input._tensor.dtype, 
+                            requires_grad=input._tensor.requires_grad)
+            ], dim=1)
+            output = Zonotope(torch.cat([inputPadded, other._tensor], dim=0))
+        ctx.save_for_backward(input, other)
+        return output
+    
+    @staticmethod
+    def backward(ctx, grad_output):
+        """Backward pass of the Cartesian Product"""
+        input, other = ctx.saved_tensors
+        z_grad_input = grad_output._tensor[:input._dim, :input._numGenerators+1, :]
+        z_grad_other = grad_output._tensor[input._dim:, :other._numGenerators+1:, :]
+        return Zonotope(z_grad_input), Zonotope(z_grad_other)

@@ -43,9 +43,11 @@ class ActorCritic(ABC):
         self.options = self.__validateOptions(options)
 
         assert isinstance(actor, torch.nn.Sequential)
+        self.__xavierInit(actor)
         self.actor = actor.to(device)
 
         assert isinstance(critic, torch.nn.Sequential)
+        self.__xavierInit(actor)
         self.critic = critic.to(device)
 
         self.actor_optim = torch.optim.Adam(self.actor.parameters(), lr=options['actor_lr'], weight_decay=options['actor_l2'])
@@ -158,13 +160,6 @@ class ActorCritic(ABC):
         """Abstract wrapper for actor evaluation and policy roll out"""
         pass
 
-    def __xavierInit(self,model):
-        """Xavier initialization of the model"""
-        for layer in model:
-            if isinstance(layer, torch.nn.Linear):
-                torch.nn.init.xavier_uniform_(layer.weight)
-                layer.bias.data.fill_(0.01)
-
     def __getNumActionGens(self):
         """Returns the number of generators of the action zonotope"""
         if self.options['critic_train_mode'] == 'set':
@@ -173,6 +168,13 @@ class ActorCritic(ABC):
         else:
             num_generators = None
         return num_generators
+    
+    def __xavierInit(self,network):
+        """Xavier initialization of the network"""
+        for layer in network:
+            if isinstance(layer, torch.nn.Linear):
+                torch.nn.init.xavier_normal_(layer.weight)
+                torch.nn.init.zeros_(layer.bias)
     
     def __validateOptions(self,options):
         """Validates the option dictionary and sets default values"""

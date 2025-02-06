@@ -48,7 +48,7 @@ class DDPG(ActorCritic):
         self.exploration = torch.zeros((self.action_dim,1)).to(device)
         self.target_actor = deepcopy(self.actor).to(device)
         self.target_critic = deepcopy(self.critic).to(device)
-        self.actor_loss = self.ZonotopePolicyGradient(self.options['actor_eta'],self.options['actor_omega'],self.options['noise'])
+        self.actor_loss = ZonotopePolicyGradient(self.options['actor_eta'],self.options['actor_omega'],self.options['noise'])
 
     def act(self,state):
         """Returns the action for a given state acting with the environment and gaining experience"""
@@ -99,10 +99,10 @@ class DDPG(ActorCritic):
         critic_loss = self.train_critic(states,actions,target)
 
         if self.options['actor_train_mode'] == 'set':
-            z_states = self.augmentState(states).permute(1,2,0)
+            z_states = self.augmentState(states.clone().detach()).permute(1,2,0)
             eval_states = Zonotope(z_states)
         else:
-            eval_states = states
+            eval_states = states.clone().detach()
 
         actor_loss = self.train_actor(eval_states)
 
@@ -127,10 +127,9 @@ class DDPG(ActorCritic):
             else:
                 raise ValueError('Critic training only implemented point or set.')
             
-            loss = self.actor_loss(actions, q_val)
+            loss = self.actor_loss(q_val)
 
         elif self.options['actor_train_mode'] in ['point','adv_naive','adv_grad']:
-            self.actor_optim.zero_grad()
             q_val = self.critic(torch.cat([states,actions],dim=1))
             loss = -q_val.mean()
         else:
@@ -138,6 +137,7 @@ class DDPG(ActorCritic):
                              
         loss.backward()
         self.actor_optim.step()
+        
         return loss.item()
     
     def soft_update(self,net,net_target):
@@ -164,4 +164,3 @@ class DDPG(ActorCritic):
             if key not in options:
                 options[key] = default_options[key] 
         return options
-        

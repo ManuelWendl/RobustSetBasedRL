@@ -37,6 +37,9 @@ class Zonotope(torch.Tensor):
         """Implements the print function"""
         return "Zonotope(center={}, generators={})".format(self._tensor[:,0,...], self._tensor[:,1:,...])
     
+    def tensor(self):
+        return self._tensor
+    
     def getCenter(self):
         """Returns the center(s) of the zonotope(s)"""
         return self._tensor[:,0,...].unsqueeze(1)
