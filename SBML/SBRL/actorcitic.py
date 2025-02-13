@@ -234,6 +234,6 @@ class ActorCritic(ABC):
         if episode == 0:
             print("Training Information:")
             print("=====================")
-            print("|Episode\t|Elapsed Time\t|Reward\t|Q-Value\t|Critic-Loss\t|Actor-Loss")
-            print("|-------\t|----------\t|----------\t|-----------\t|-----------\t|----------")
-        print("|{}\t|{}\t|{}\t|{}\t|{}\t|{}".format(episode,time,reward,q_val.item(),critic_loss,actor_loss))
+            print("|Episode|Time   |Reward         |Q-Value        |Critic-Loss    |Actor-Loss     |")
+            print("|-------|-------|---------------|---------------|---------------|---------------|")
+        print("|{}\t|{:.1f}\t|{:.2e}\t|{:.2e}\t|{:.2e}\t|{:.2e}\t|".format(episode,time/60,reward,q_val.item(),critic_loss,actor_loss))
