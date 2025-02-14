@@ -124,8 +124,8 @@ class DDPG(ActorCritic):
                 q_val = self.critic(torch.functional.cartesian_prod(states,actions))
                 loss = self.actor_loss(q_val) + self.actor_vol_loss(actions)
             elif self.options['critic_train_mode'] == 'point':
-                action_center = actions.extractCenter().reshape(-1,actions._dim)
-                states_center = states.getCenter().reshape(-1,states._dim)
+                action_center = actions.extractCenter().permute(2,0,1).squeeze(2)
+                states_center = states.getCenter().permute(2,0,1).squeeze(2)
                 q_val = self.critic(torch.cat([states_center,action_center],dim=1))
                 loss = -q_val.mean() #+ self.actor_vol_loss(actions)
             else:
