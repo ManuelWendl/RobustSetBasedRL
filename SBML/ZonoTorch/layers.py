@@ -96,7 +96,7 @@ class ZonotopeTanh(torch.autograd.Function):
         l = c - torch.abs(G).sum(1).unsqueeze(1)
 
         m = (torch.tanh(u)-torch.tanh(l))/(u-l)
-        m = torch.where(m.isnan(), torch.tensor(0.0, device=m.device, dtype=m.dtype), m)
+        m = torch.where(m.isnan(), 1-torch.tanh(c)**2, m)
         ctx.save_for_backward(m)
 
         # Find approximation error
@@ -120,6 +120,8 @@ class ZonotopeTanh(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output):
         m = ctx.saved_tensors[0]
+        if not isinstance(grad_output,Zonotope) and isinstance(grad_output,torch.Tensor):
+            grad_output = Zonotope(grad_output)
         grad_input = torch.mul(m,grad_output)
         grad_input = Zonotope(grad_input._tensor[:,0:-grad_input._dim,...])
         return grad_input
@@ -205,3 +207,4 @@ class ZonotopeCartesian(torch.autograd.Function):
         z_grad_input = grad_output._tensor[:input._dim, :input._numGenerators+1, :]
         z_grad_other = grad_output._tensor[input._dim:, :other._numGenerators+1:, :]
         return Zonotope(z_grad_input), Zonotope(z_grad_other)
+    

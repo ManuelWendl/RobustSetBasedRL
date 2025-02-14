@@ -34,6 +34,18 @@ class ZonotopePolicyGradient(torch.nn.Module):
     def forward(self, q_val):
         loss = ZPG.apply(q_val, self.eta, self.omega, self.noise)
         return loss
+    
+class ZonotopeActorGradient(torch.nn.Module):
+    """implements the set-based actor gradient"""
+    def __init__(self, eta, omega, noise):
+        super().__init__()
+        self.eta = eta
+        self.omega = omega
+        self.noise = noise
+
+    def forward(self, action):
+        loss = ZAG.apply(action, self.eta, self.omega, self.noise)
+        return loss
 
 class ZRL(torch.autograd.Function):
     """
@@ -164,5 +176,47 @@ class ZPG(torch.autograd.Function):
 
         return grad_q, None, None, None, None
 
+class ZAG(torch.autograd.Function):
+    """
+    ZAG (Zonotope Actor Gradient):
+
+    Implements a set-based actor gradient loss that penalizes the actor’s output.
+    """
+
+    @staticmethod
+    def forward(ctx, action, eta, omega, noise):
+        ctx.save_for_backward(action)
+        ctx.eta = eta
+        ctx.omega = omega
+        ctx.noise = noise
+
+        GLoss = (eta/noise) * (1-omega)*torch.log(2*radius(action)).reshape(-1, 1)
+
+        GLoss = torch.where(GLoss < -1000, torch.full_like(GLoss, -1000), GLoss)
+        loss = (1 / action._batchSize) * torch.sum(GLoss)
+        return loss
         
+    @staticmethod
+    def backward(ctx, grad_output):
+        """
+        Backward propagation for the ZAG loss.
+
+        We must return gradients for each input to forward:
+          - grad_actions: gradients for the actor’s zonotope (Zonotope underlying tensor)
+          - None for states, eta, omega, and noise (assuming we do not update them with this loss)
+        """
+        action, = ctx.saved_tensors
+        eta = ctx.eta
+        omega = ctx.omega
+        noise = ctx.noise
+        B = action._batchSize
+
+        grad_a_gen = (1 / B)*(eta/noise)* (1-omega) * (torch.sign(action.getGenerators()) / radius(action))
+        grad_a_gen[grad_a_gen.isnan()] = 0
+        grad_a_gen = torch.clamp(grad_a_gen, -1e6, 1e6)
+        z_grad_a = torch.cat([torch.zeros_like(action.getCenter()), grad_a_gen], dim=1)
+        
+        grad_a = Zonotope(z_grad_a)
+
+        return grad_a, None, None, None
         

@@ -18,6 +18,8 @@ class Zonotope(torch.Tensor):
     - _batchsize: third dimension of tensor (if multiple zonotopes are stored)
     '''
     def __init__(self, value):
+        assert isinstance(value, torch.Tensor); "Zonotope must be initialized with a torch.Tensor"
+
         if value.requires_grad:
             self._tensor = torch.as_tensor(value,dtype=value.dtype,device=value.device).requires_grad_()
         else:
@@ -47,6 +49,10 @@ class Zonotope(torch.Tensor):
     def getGenerators(self):
         """Returns the generator(s) of the zonotope(s)"""
         return self._tensor[:,1:,...]
+    
+    def extractCenter(self):
+        """Extracts the center of the zonotope"""
+        return ZonotopeGetCenter.apply(self)
 
     @classmethod
     def __torch_function__(cls, func, types, args=(), kwargs=None):
@@ -105,3 +111,30 @@ def implements(torch_function):
         HANDLED_FUNCTIONS[torch_function] = func
         return func
     return decorator
+
+class ZonotopeGetCenter(torch.autograd.Function):
+    """
+    ZonotopeGetCenter: Get Center of Zonotope
+    ========================================
+    
+    This class implements the operation to get the center of a zonotope.
+    
+    Functions:
+    ----------
+    - forward: Forward pass
+    - backward: Backward pass
+    """
+    @staticmethod
+    def forward(ctx, input):
+        """Forward pass of the Get Center operation"""
+        ctx.save_for_backward(input)
+        return input._tensor[:, 0, ...].unsqueeze(1)
+    
+    @staticmethod
+    def backward(ctx, grad_output):
+        """Backward pass of the Get Center operation"""
+        input, = ctx.saved_tensors
+        center_grad = grad_output 
+        generator_grad = torch.zeros_like(input._tensor[:, 1:, ...])
+        grad_output = Zonotope(torch.cat([center_grad, generator_grad], dim=1))
+        return grad_output

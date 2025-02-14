@@ -3,6 +3,7 @@ from copy import deepcopy
 from ..actorcitic import ActorCritic
 from ...ZonoTorch.set import Zonotope
 from ...ZonoTorch.losses import ZonotopePolicyGradient
+from ...ZonoTorch.losses import ZonotopeActorGradient
 
 class DDPG(ActorCritic):
     """
@@ -49,6 +50,7 @@ class DDPG(ActorCritic):
         self.target_actor = deepcopy(self.actor).to(device)
         self.target_critic = deepcopy(self.critic).to(device)
         self.actor_loss = ZonotopePolicyGradient(self.options['actor_eta'],self.options['actor_omega'],self.options['noise'])
+        self.actor_vol_loss = ZonotopeActorGradient(self.options['actor_eta'],self.options['actor_omega'],self.options['noise'])
 
     def act(self,state):
         """Returns the action for a given state acting with the environment and gaining experience"""
@@ -120,23 +122,26 @@ class DDPG(ActorCritic):
             assert isinstance(states,Zonotope)
             if self.options['critic_train_mode'] == 'set':
                 q_val = self.critic(torch.functional.cartesian_prod(states,actions))
+                loss = self.actor_loss(q_val) + self.actor_vol_loss(actions)
             elif self.options['critic_train_mode'] == 'point':
-                action_center = actions.getCenter().reshape(-1,actions._dim)
+                action_center = actions.extractCenter().reshape(-1,actions._dim)
                 states_center = states.getCenter().reshape(-1,states._dim)
                 q_val = self.critic(torch.cat([states_center,action_center],dim=1))
+                loss = -q_val.mean() #+ self.actor_vol_loss(actions)
             else:
                 raise ValueError('Critic training only implemented point or set.')
             
-            loss = self.actor_loss(q_val)
-
-        elif self.options['actor_train_mode'] in ['point','adv_naive','adv_grad']:
+        elif self.options['actor_train_mode'] in ['point','adv_naive','adv_grad'] and self.options['critic_train_mode'] == 'point':
             q_val = self.critic(torch.cat([states,actions],dim=1))
             loss = -q_val.mean()
         else:
-            raise ValueError("Invalid critic training mode")
+            raise ValueError("Invalid critic and actor training mode combination. Possible combinations: Actor: ('point','adv_naive','adv_grad','set','set') and Critic: ('point','point','point','point','set')")
                              
         loss.backward()
+        #old_params = [params.clone().detach() for params in self.actor.parameters()]
         self.actor_optim.step()
+        #diff_params = [old_param - new_param for old_param,new_param in zip(old_params,self.actor.parameters())]
+        #print('Avg diff params: {:.2e}'.format(sum([torch.sum(torch.abs(diff_param)) for diff_param in diff_params])))
         
         return loss.item()
     
