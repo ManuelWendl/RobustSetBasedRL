@@ -7,7 +7,7 @@ This package uses a zonotope extension of pytorch to implement set-based machine
 """
 
 from .buffer import Buffer
-from .senv import SetEnvironmnent
+from .senv import SetEnvironmnent, GymEnvironment
 from .algorithms.ddpg import DDPG
 
-__all__ = ['DDPG', 'Buffer', 'SetEnvironmnent']
+__all__ = ['DDPG', 'Buffer', 'SetEnvironmnent', 'GymEnvironment']

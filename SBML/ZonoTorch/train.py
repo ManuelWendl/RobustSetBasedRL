@@ -59,7 +59,15 @@ def train(model,loss,optimizer,xTrain,yTrain,epochs,batchsize=64,noise=0.0,verbo
     return model
 
 def printPartameters(params, values):
-    """Prints the Neural Network Learning Paramteres and the learning logging header"""
+    """
+    Prints the Neural Network Learning Paramteres and the learning logging header
+    
+    Parameters:
+    -----------
+    - params: list of parameter names
+    - values: list of parameter values
+    """
+    
     print('_____________________________________')
     print(' Neural Network Training Paramteres: ')
     print('-------------------------------------')

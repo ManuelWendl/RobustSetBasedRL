@@ -5,6 +5,7 @@ import torch
 from .buffer import Buffer
 from ..ZonoTorch.set import Zonotope
 from ..ZonoTorch.losses import ZonotopeRegressionLoss
+from .senv import GymEnvironment
 
 
 class ActorCritic(ABC):
@@ -39,6 +40,17 @@ class ActorCritic(ABC):
     """
 
     def __init__(self,actor,critic,options,device):
+        """
+        Initializes the actor-critic agent
+
+        Parameters:
+        -----------
+        - actor: The actor network (torch.nn.Sequential)
+        - critic: The critic network (torch.nn.Sequential)
+        - options: Dictionary with options for the agent
+        - device: cuda (gpu) or cpu
+        """
+
         self.device = device
         self.options = self.__validateOptions(options)
 
@@ -69,25 +81,37 @@ class ActorCritic(ABC):
 
         self.state_dim = self.actor[0].in_features
 
-        self.buffer = Buffer(options['buffer_size'],device,self.state_dim,self.action_dim,num_generators)
+        self.buffer = Buffer(int(options['buffer_size']),device,self.state_dim,self.action_dim,num_generators)
+
+        self.learn_hist = {'reward':[]}
+
     
-    def train(self,env,episodes=1000,verbose=True):
-        """Trains the actor-critic agent"""
+    def train(self,env,steps=1000,verbose=True):
+        """
+        Trains the agent in the environment
+
+        Parameters:
+        -----------
+        - env: The environment (GymEnvironment or SetEnvironmnent)
+        - steps: Number of training steps (simulatin steps of the environment)
+        - verbose: If True, prints training information
+        """
+
         self.buffer.reset()
         
         if self.options['actor_train_mode'] == 'set':
             self.noise = torch.eye(self.actor[0].in_features).to(self.device) * self.options['noise']
 
-        self.__printOpionsInfo(episodes)
-
+        self.__printOpionsInfo(steps)
         t_start = time()
+        step = 0
 
-        for episode in range(episodes):
+        while step < steps:
             state = env.reset()
             done = False
-            total_reward = 0
-            total_critic_loss = 0
-            total_actor_loss = 0
+            total_reward = torch.zeros(1, device=self.device)
+            total_critic_loss = torch.zeros(1, device=self.device)
+            total_actor_loss = torch.zeros(1, device=self.device)
             num_step = 0
 
             while not done:
@@ -102,25 +126,75 @@ class ActorCritic(ABC):
                     q_val = self.eval(state,a)
                 
                 next_state, reward, done, _ = env.step(a)
+
                 if isinstance(action, Zonotope):
                     action = action._tensor.reshape(1,self.action_dim,-1)
+
                 self.buffer.add(state,action,reward,next_state,done)
+
                 state = next_state
                 total_reward += reward
-
-                num_step += 1
 
                 if self.buffer.full or self.buffer.indx > self.options['batch_size']:
                     critic_loss, actor_loss = self.train_step()
                     total_actor_loss += actor_loss
                     total_critic_loss += critic_loss
 
-            if verbose:
-                self.__printTrainingInfo(time()-t_start,episode,total_reward,q_val,total_critic_loss/num_step, total_actor_loss/num_step)
+                num_step += 1
+
+                if verbose and step % self.options['print_freq'] == 0:
+                    self.__printTrainingInfo(time()-t_start,step,total_reward,q_val,total_critic_loss/num_step, total_actor_loss/num_step)
+
+                if step % self.options['eval_freq'] == 0:
+                    self.eval_agent(env)
+                    state = env.reset()
+
+                step += 1
+
+    
+    def eval_agent(self,env):
+        """
+        Evaluates the agent in the environment without exploration noise
+
+        Parameters:
+        -----------
+        - env: The environment (GymEnvironment or SetEnvironmnent)
+        """
+        
+        done = False
+
+        if isinstance(env, GymEnvironment):
+            state = env.reset(eval_run=True)
+        else:
+            state = env.reset()
+
+        total_reward = torch.zeros(1, device=self.device)
+
+        while not done:
+            action = self.actor(state)
+            state, reward, done, _ = env.step(action)
+            total_reward += reward
+
+        self.learn_hist['reward'].append(total_reward.cpu().numpy())
+
 
     def train_critic(self,state,action,target):
-        """Trains the critic network"""
+        """
+        Trains the critic network
+
+        Parameters:
+        -----------
+        - state: The state tensor
+        - action: The action tensor
+        - target: The target tensor
+
+        Returns:
+        --------
+        - loss: The critic loss
+        """
+
         self.critic_optim.zero_grad()
+
         if self.options['critic_train_mode'] == 'set':
             z_state = Zonotope(self.augmentState(state).permute(1,2,0))
             z_action = Zonotope(action.permute(1,2,0))
@@ -138,30 +212,64 @@ class ActorCritic(ABC):
         self.critic_optim.step()
         return loss.item()
     
+    
     def eval(self,state,action):
-        """Evaluates the critic for the first timestep"""
+        """
+        Evaluates the critic network
+
+        Parameters:
+        -----------
+        - state: The state tensor
+        - action: The action tensor
+
+        Returns:
+        --------
+        - q_val: The Q-value
+        """
+
         q_val = self.critic(torch.cat([state,action],dim=1))
         return q_val
     
+    
     def augmentState(self,state):
-        """Augments the state with noise for set training"""
+        """
+        Augments the state tensor with noise for set training
+
+        Parameters:
+        -----------
+        - state: The state tensor
+
+        Returns:
+        --------
+        - augmented state tensor
+        """
+
         assert state.dim() == 2
+
         noise = self.noise.unsqueeze(0)
         noise_batch = noise.repeat(state.size(0),1,1)
         return torch.cat([state.unsqueeze(2),noise_batch],dim=2)
+    
         
     @abstractmethod
     def train_step(self):
-        """Abstract wrapper for training step specific to the algorithm"""
+        """Abstract function for training step specific to the algorithm"""
         pass
 
     @abstractmethod
     def act(self,state):
-        """Abstract wrapper for actor evaluation and policy roll out"""
+        """Abstract functio for actor evaluation and policy roll out"""
         pass
 
     def __getNumActionGens(self):
-        """Returns the number of generators of the action zonotope"""
+        """
+        Returns the number of generators for the action space
+
+        Returns:
+        --------
+        - num_generators: The number of generators
+        """
+
         if self.options['critic_train_mode'] == 'set':
             num_activations = sum(self.actor[i-1].out_features for i in range(1,len(self.actor)) if isinstance(self.actor[i],(torch.nn.ReLU, torch.nn.Tanh)))
             num_generators = self.actor[0].in_features + num_activations
@@ -170,14 +278,43 @@ class ActorCritic(ABC):
         return num_generators
     
     def __xavierInit(self,network):
-        """Xavier initialization of the network"""
-        for layer in network:
+        """
+        Xavier initialization of the network, except of last layers:
+        The final layer weights and biases of both the actor and critic
+        were initialized from a uniform distribution [-3 x 10-3, 3 x 10-3]
+        
+        Parameters:
+        -----------
+        - network: The network to be initialized
+        """
+
+        for layer in network[:-2]:
             if isinstance(layer, torch.nn.Linear):
-                torch.nn.init.xavier_normal_(layer.weight)
+                torch.nn.init.xavier_uniform_(layer.weight)
                 torch.nn.init.zeros_(layer.bias)
+
+        if isinstance(network[-2], torch.nn.Linear):
+            network[-2].weight.data.uniform_(-3e-3,3e-3)
+            network[-2].bias.data.uniform_(-3e-3,3e-3)
+        
+        if isinstance(network[-1], torch.nn.Linear):
+            network[-1].weight.data.uniform_(-3e-3,3e-3)
+            network[-1].bias.data.uniform_(-3e-3,3e-3)
+            
     
     def __validateOptions(self,options):
-        """Validates the option dictionary and sets default values"""
+        """
+        Validates the option dictionary and sets default values
+        
+        Parameters:
+        -----------
+        - options: The options dictionary
+
+        Returns:
+        --------
+        - options: The validated options dictionary
+        """
+
         default_options = {
             'gamma': .99,
             'buffer_size': 10000,
@@ -191,15 +328,27 @@ class ActorCritic(ABC):
             'actor_train_mode': 'set',
             'actor_eta': 0.01,
             'actor_omega': .5,
-            'noise': 0.1
+            'noise': 0.1,
+            'eval_freq': 10000,
+            'print_freq': 1000,
         }
+
         for key in default_options:
             if key not in options:
                 options[key] = default_options[key]
+
         return options
+    
         
-    def __printOpionsInfo(self,episodes):
-        """Prints the options of the agent"""
+    def __printOpionsInfo(self,steps):
+        """
+        Prints options of the agent
+        
+        Parameters:
+        -----------
+        - steps: Number of training steps
+        """
+
         print("Reinforcment Learning Parameters:")
         print("=================================")
         print("Standard-RL Options:")
@@ -207,7 +356,7 @@ class ActorCritic(ABC):
         print("Discount Factor (gamma): {}".format(self.options['gamma']))
         print("Buffer Size: {}".format(self.options['buffer_size']))
         print("Batch Size: {}".format(self.options['batch_size']))
-        print("Episodes: {}".format(episodes))
+        print("Steps: {}".format(steps))
         print("Device: {}".format(self.device))
 
         print("\nActor Options:")
@@ -228,12 +377,25 @@ class ActorCritic(ABC):
         print("=================================")
         print("")
         print("")
+
         
-    def __printTrainingInfo(self,time, episode,reward,q_val,critic_loss,actor_loss):
-        """Prints the training information"""
-        if episode == 0:
+    def __printTrainingInfo(self,time, step,reward,q_val,critic_loss,actor_loss):
+        """
+        Prints the training information in each time step
+        
+        Parameters:
+        -----------
+        - time: Time of the training step
+        - step: The episode number
+        - reward: The total reward
+        - q_val: The Q-value
+        - critic_loss: The critic loss
+        - actor_loss: The actor loss
+        """
+
+        if step == 0:
             print("Training Information:")
             print("=====================")
-            print("|Episode|Time   |Reward         |Q-Value        |Critic-Loss    |Actor-Loss     |")
-            print("|-------|-------|---------------|---------------|---------------|---------------|")
-        print("|{}\t|{:.1f}\t|{:.2e}\t|{:.2e}\t|{:.2e}\t|{:.2e}\t|".format(episode,time/60,reward,q_val.item(),critic_loss,actor_loss))
+            print("|Step           |Time   |Reward         |Q-Value        |Critic-Loss    |Actor-Loss     |")
+            print("|---------------|-------|---------------|---------------|---------------|---------------|")
+        print("|{:.2e}\t|{:.1f}\t|{:.2e}\t|{:.2e}\t|{:.2e}\t|{:.2e}\t|".format(step,time/60,reward,q_val.item(),critic_loss,actor_loss))

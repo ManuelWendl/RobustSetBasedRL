@@ -44,7 +44,19 @@ class DDPG(ActorCritic):
     """
     
     def __init__(self,actor,critic,options,device):
+        """
+        Initializes the DDPG agent
+
+        Parameters:
+        -----------
+        - actor: The actor network (torch.nn.Sequential)
+        - critic: The critic network (torch.nn.Sequential)
+        - options: Dictionary with options for the agent
+        - device: cuda (gpu) or cpu
+        """
+
         super().__init__(actor,critic,options,device)
+
         self.options = self.__validateDDPGOptions(options)
         self.exploration = torch.zeros((self.action_dim,1)).to(device)
         self.target_actor = deepcopy(self.actor).to(device)
@@ -52,8 +64,20 @@ class DDPG(ActorCritic):
         self.actor_loss = ZonotopePolicyGradient(self.options['actor_eta'],self.options['actor_omega'],self.options['noise'])
         self.actor_vol_loss = ZonotopeActorGradient(self.options['actor_eta'],self.options['actor_omega'],self.options['noise'])
 
+
     def act(self,state):
-        """Returns the action for a given state acting with the environment and gaining experience"""
+        """
+        Returns the action augmented with exploration noise (either OU or Gaussian)
+
+        Parameters:
+        -----------
+        - state: The state of the environment
+
+        Returns:
+        --------
+        - action: The action augmented with exploration noise        
+        """
+
         if state.dim() == 1:
             state = state.unsqueeze(0)
 
@@ -80,22 +104,29 @@ class DDPG(ActorCritic):
         if self.options['critic_train_mode'] == 'set':
             action._tensor[:,0,...] = action._tensor[:,0,...] + self.exploration
         else:
-            action = action + self.exploration
+            action = action + self.exploration.permute(1,0)
         return torch.clamp(action,self.options['action_lb'],self.options['action_ub'])
+    
     
     def eval(self, state, action):
         return super().eval(state, action)
     
 
     def train_step(self):
-        """Performs train step of the actor-critic DDPG agent"""
+        """
+        Performs train step of the actor-critic DDPG agent
+        
+        Returns:
+        --------
+        - critic_loss: The critic loss
+        - actor_loss: The actor loss
+        """
+
         states, actions, rewards, next_states, dones = self.buffer.sample(self.options['batch_size'])
 
         with torch.no_grad():   
             next_target_action = self.target_actor(next_states)
             target_q = self.target_critic(torch.cat([next_states,next_target_action],dim=1))
-            if target_q.isnan().any():
-                raise ValueError("NaN in target Q values.")
             target = rewards + self.options['gamma'] * target_q * (1 - dones)
 
         critic_loss = self.train_critic(states,actions,target)
@@ -115,9 +146,22 @@ class DDPG(ActorCritic):
 
         
     def train_actor(self,states):
-        """Trains the actor network"""
+        """
+        Trains the actor network
+
+        Parameters:
+        -----------
+        - states: The states of the environment
+
+        Returns:
+        --------
+        - loss: The loss of the actor
+        """
+
         self.actor_optim.zero_grad()
+
         actions = self.actor(states)
+
         if self.options['actor_train_mode'] == 'set':
             assert isinstance(states,Zonotope)
             if self.options['critic_train_mode'] == 'set':
@@ -127,7 +171,7 @@ class DDPG(ActorCritic):
                 action_center = actions.extractCenter().permute(2,0,1).squeeze(2)
                 states_center = states.getCenter().permute(2,0,1).squeeze(2)
                 q_val = self.critic(torch.cat([states_center,action_center],dim=1))
-                loss = -q_val.mean() #+ self.actor_vol_loss(actions)
+                loss = -q_val.mean() + self.actor_vol_loss(actions)
             else:
                 raise ValueError('Critic training only implemented point or set.')
             
@@ -138,21 +182,37 @@ class DDPG(ActorCritic):
             raise ValueError("Invalid critic and actor training mode combination. Possible combinations: Actor: ('point','adv_naive','adv_grad','set','set') and Critic: ('point','point','point','point','set')")
                              
         loss.backward()
-        #old_params = [params.clone().detach() for params in self.actor.parameters()]
         self.actor_optim.step()
-        #diff_params = [old_param - new_param for old_param,new_param in zip(old_params,self.actor.parameters())]
-        #print('Avg diff params: {:.2e}'.format(sum([torch.sum(torch.abs(diff_param)) for diff_param in diff_params])))
         
         return loss.item()
     
     def soft_update(self,net,net_target):
-        """Soft update of the target network"""
+        """
+        Soft update of the target network
+        
+        Parameters:
+        -----------
+        - net: The network to be updated
+        - net_target: The target network
+        """
+
         for param, target_param in zip(net.parameters(),net_target.parameters()):
             target_param.data = target_param.data * (1 - self.options['tau']) + param.data * self.options['tau']
         
     
     def __validateDDPGOptions(self,options):
-        """Validates the options for the DDPG agent"""
+        """
+        Validates the options for the DDPG agent
+        
+        Parameters:
+        -----------
+        - options: The options for the agent
+
+        Returns:
+        --------
+        - options: The validated options
+        """
+        
         default_options = {
             'exp_noise': 0.2,
             'exp_noise_type': 'ou',

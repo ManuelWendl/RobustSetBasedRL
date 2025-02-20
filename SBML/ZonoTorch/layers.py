@@ -15,14 +15,44 @@ class ZonotopeLinear(torch.autograd.Function):
     """
     @staticmethod
     def forward(ctx,input,weight,bias):
-        # Save input and weight for backprop
+        """
+        Computes the forward pass of the linear layer
+
+        Parameters:
+        -----------
+        - ctx: Context
+        - input: Input zonotope
+        - weight: Weight matrix
+        - bias: Bias vector
+
+        Returns:
+        --------
+        - output: Output zonotope
+        """
+
         ctx.save_for_backward(input, weight)
         output = torch.tensordot(weight,input,dims=1)
         output = torch.add(output,Zonotope(bias.unsqueeze(1).unsqueeze(2).expand_as(output.getCenter())))
         return output
+    
 
     @staticmethod
     def backward(ctx, grad_output):
+        """
+        Computes the backward pass of the linear layer
+
+        Parameters:
+        -----------
+        - ctx: Context
+        - grad_output: Gradient of the output
+
+        Returns:
+        --------
+        - grad_input: Gradient of the input
+        - grad_weight: Gradient of the weight
+        - grad_bias: Gradient of the bias
+        """
+
         inputs, weight = ctx.saved_tensors
         center_Term = torch.matmul(grad_output.getCenter().squeeze(),inputs.getCenter().squeeze().t())
         input_G = torch.nn.functional.pad(inputs.getGenerators(),(0,0,0,grad_output._numGenerators-inputs._numGenerators))
@@ -48,6 +78,19 @@ class ZonotopeReLU(torch.autograd.Function):
     """
     @staticmethod
     def forward(ctx,input):
+        """
+        Computes the forward pass of the ReLU layer
+
+        Parameters:
+        -----------
+        - ctx: Context
+        - input: Input zonotope
+
+        Returns:
+        --------
+        - output: Output zonotope
+        """
+
         c = input.getCenter()
         G = input.getGenerators()
 
@@ -58,7 +101,6 @@ class ZonotopeReLU(torch.autograd.Function):
         m[(l>0)*(u>0)] = 1
         m[(l<0)*(u>0)] = u[(l<0)*(u>0)]/(u[(l<0)*(u>0)]-l[(l<0)*(u>0)])
 
-        # Save slope for backprop
         ctx.save_for_backward(m)
 
         t = torch.zeros(l.shape,device=c.device)
@@ -67,13 +109,28 @@ class ZonotopeReLU(torch.autograd.Function):
         
         output = torch.add(torch.mul(m,input),Zonotope(torch.cat([t,d],1)))
         return output
+    
 
     @staticmethod
     def backward(ctx, grad_output):
+        """
+        Computes the backward pass of the ReLU layer
+
+        Parameters:
+        -----------
+        - ctx: Context
+        - grad_output: Gradient of the output
+
+        Returns:
+        --------
+        - grad_input: Gradient of the input
+        """
+
         m = ctx.saved_tensors[0]
         grad_input = torch.mul(m,grad_output)
         grad_input = Zonotope(grad_input._tensor[:,0:-grad_input._dim,...])
         return grad_input
+    
     
 class ZonotopeTanh(torch.autograd.Function):
     """
@@ -89,6 +146,19 @@ class ZonotopeTanh(torch.autograd.Function):
     """
     @staticmethod
     def forward(ctx,input):
+        """
+        Computes the forward pass of the Tanh layer
+
+        Parameters:
+        -----------
+        - ctx: Context
+        - input: Input zonotope
+
+        Returns:
+        --------
+        - output: Output zonotope
+        """
+
         c = input.getCenter()
         G = input.getGenerators()
 
@@ -113,18 +183,34 @@ class ZonotopeTanh(torch.autograd.Function):
         dl = torch.min(torch.tanh(x)-(m*x),axis=1).values.unsqueeze(1)
         t = 1/2*(du+dl)
         d = 1/2*(du-dl)
+        d = (d.permute(2, 0, 1) * torch.eye(d.size(0), device=c.device)).permute(1, 2, 0)
 
         output = torch.add(torch.mul(m,input),Zonotope(torch.cat([t,d],1)))
         return output
+    
 
     @staticmethod
     def backward(ctx, grad_output):
+        """
+        Computes the backward pass of the Tanh layer
+
+        Parameters:
+        -----------
+        - ctx: Context
+        - grad_output: Gradient of the output
+
+        Returns:
+        --------
+        - grad_input: Gradient of the
+        """
+
         m = ctx.saved_tensors[0]
         if not isinstance(grad_output,Zonotope) and isinstance(grad_output,torch.Tensor):
             grad_output = Zonotope(grad_output)
         grad_input = torch.mul(m,grad_output)
         grad_input = Zonotope(grad_input._tensor[:,0:-grad_input._dim,...])
         return grad_input
+    
     
 class ZonotopeSoftmax(torch.autograd.Function):
     """
@@ -140,6 +226,19 @@ class ZonotopeSoftmax(torch.autograd.Function):
     """
     @staticmethod
     def forward(ctx,input):
+        """
+        Comutes the forward pass of the Softmax layer
+
+        Parameters:
+        -----------
+        - ctx: Context
+        - input: Input zonotope
+
+        Returns:
+        --------
+        - output: Output zonotope
+        """
+
         c = input.getCenter()
         G = input.getGenerators()
 
@@ -158,10 +257,23 @@ class ZonotopeSoftmax(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
+        """
+        Computes the backward pass of the Softmax layer
+
+        Parameters:
+        -----------
+        - ctx: Context
+        - grad_output: Gradient of the output
+
+        Returns:
+        --------
+        - grad_input: Gradient of the input
+        """
         m = ctx.saved_tensors[0]
         grad_input = torch.mul(m,grad_output)
         grad_input = Zonotope(grad_input._tensor[:,0:-grad_input._dim,...])
         return grad_input
+    
     
 class ZonotopeCartesian(torch.autograd.Function):
     """
@@ -175,9 +287,23 @@ class ZonotopeCartesian(torch.autograd.Function):
     - forward: Forward pass
     - backward: Backward pass
     """
+
     @staticmethod
     def forward(ctx, input, other):
-        """Forward pass of the Cartesian Product"""
+        """
+        Computes the forward pass of the Cartesian Product
+
+        Parameters:
+        ----------- 
+        - ctx: Context
+        - input: First Zonotope
+        - other: Second Zonotope
+
+        Returns:
+        --------
+        - output: Cartesian Product of the two Zonotopes
+        """
+
         if input._batchSize != other._batchSize:
             raise ValueError("Batchsize mismatch of added Zonotope Batches.")
         diffGenerators = input._numGenerators - other._numGenerators
@@ -200,9 +326,23 @@ class ZonotopeCartesian(torch.autograd.Function):
         ctx.save_for_backward(input, other)
         return output
     
+    
     @staticmethod
     def backward(ctx, grad_output):
-        """Backward pass of the Cartesian Product"""
+        """
+        Computes the backward pass of the Cartesian Product
+
+        Parameters:
+        -----------
+        - ctx: Context
+        - grad_output: Gradient of the output
+
+        Returns:
+        --------
+        - grad_input: Gradient of the input
+        - grad_other: Gradient of the other
+        """
+        
         input, other = ctx.saved_tensors
         z_grad_input = grad_output._tensor[:input._dim, :input._numGenerators+1, :]
         z_grad_other = grad_output._tensor[input._dim:, :other._numGenerators+1:, :]

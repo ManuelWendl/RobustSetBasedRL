@@ -16,7 +16,20 @@ class Buffer:
     - action_dim: Dimension of the action space
     - num_generators: Number of generators of the zonotope (default: None)
     """
+    
     def __init__(self, buffer_size, device, state_dim, action_dim, num_generators = None):
+        """
+        Initializes the replay buffer
+
+        Parameters:
+        -----------
+        - buffer_size: Size of the replay buffer
+        - device: gpu or cpu
+        - state_dim: Dimension of the state space
+        - action_dim: Dimension of the action space
+        - num_generators: Number of generators of the zonotope (default: None)
+        """
+
         self.device = device
         self.buffer_size = buffer_size
         self.buffer = {}
@@ -34,6 +47,7 @@ class Buffer:
 
         self.indx = 0
         self.full = False
+        
 
     def reset(self):
         """Resets the replay buffer"""
@@ -41,7 +55,18 @@ class Buffer:
         self.full = False
 
     def add(self, state, action, reward, next_state, done):
-        """Adds a tuple to the replay buffer"""
+        """
+        Adds a transition to the replay buffer
+
+        Parameters:
+        -----------
+        - state: Current state
+        - action: Action taken
+        - reward: Reward received
+        - next_state: Next state
+        - done: Boolean to check if the episode is done
+        """
+
         self.buffer['state'][self.indx] = state
         self.buffer['action'][self.indx] = action
         self.buffer['reward'][self.indx] = reward
@@ -53,8 +78,24 @@ class Buffer:
             self.full = True
             self.indx = 0
 
+
     def sample(self, batch_size):
-        """Samples a batch from the replay buffer"""
+        """
+        Samples a batch from the replay buffer
+
+        Parameters:
+        -----------
+        - batch_size: Size of the batch
+
+        Returns:
+        --------
+        - state: Current state
+        - action: Action taken
+        - reward: Reward received
+        - next_state: Next state
+        - done: Boolean to check if the episode is done
+        """
+
         if self.full:
             indx = torch.randint(0, self.buffer_size, (batch_size,))
         else:
