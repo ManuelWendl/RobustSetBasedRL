@@ -141,15 +141,14 @@ class ActorCritic(ABC):
                     total_critic_loss += critic_loss
 
                 num_step += 1
+                step += 1
 
-                if verbose and step % self.options['print_freq'] == 0:
+                if verbose and (step -1) % self.options['print_freq'] == 0:
                     self.__printTrainingInfo(time()-t_start,step,total_reward,q_val,total_critic_loss/num_step, total_actor_loss/num_step)
 
                 if step % self.options['eval_freq'] == 0:
                     self.eval_agent(env)
-                    state = env.reset()
-
-                step += 1
+                    break
 
     
     def eval_agent(self,env):
@@ -161,21 +160,37 @@ class ActorCritic(ABC):
         - env: The environment (GymEnvironment or SetEnvironmnent)
         """
         
-        done = False
-
         if isinstance(env, GymEnvironment):
-            state = env.reset(eval_run=True)
+            total_reward = torch.zeros(1, device=self.device)
+            for i in range(10):
+                if i == 0:
+                    state = env.reset(eval_run=True)
+                else: 
+                    state = env.reset()
+
+                done = False
+
+                while not done:
+                    action = self.actor(state)
+                    state, reward, done, _ = env.step(action)
+                    total_reward += reward
+
+            print("Evaluation Reward: {}".format(float(total_reward.cpu())/10.0))
+            self.learn_hist['reward'].append(float(total_reward.cpu())/10.0)
+
         else:
             state = env.reset()
 
-        total_reward = torch.zeros(1, device=self.device)
+            total_reward = torch.zeros(1, device=self.device)
 
-        while not done:
-            action = self.actor(state)
-            state, reward, done, _ = env.step(action)
-            total_reward += reward
+            done = False
 
-        self.learn_hist['reward'].append(total_reward.cpu().numpy())
+            while not done:
+                action = self.actor(state)
+                state, reward, done, _ = env.step(action)
+                total_reward += reward
+
+            self.learn_hist['reward'].append(float(total_reward.cpu()))
 
 
     def train_critic(self,state,action,target):
@@ -393,9 +408,9 @@ class ActorCritic(ABC):
         - actor_loss: The actor loss
         """
 
-        if step == 0:
+        if step == 1:
             print("Training Information:")
             print("=====================")
             print("|Step           |Time   |Reward         |Q-Value        |Critic-Loss    |Actor-Loss     |")
             print("|---------------|-------|---------------|---------------|---------------|---------------|")
-        print("|{:.2e}\t|{:.1f}\t|{:.2e}\t|{:.2e}\t|{:.2e}\t|{:.2e}\t|".format(step,time/60,reward,q_val.item(),critic_loss,actor_loss))
+        print("|{:.2e}\t|{:.1f}\t|{:.2e}\t|{:.2e}\t|{:.2e}\t|{:.2e}\t|".format(step,time/60,reward.item(),q_val.item(),critic_loss.item(),actor_loss.item()))
