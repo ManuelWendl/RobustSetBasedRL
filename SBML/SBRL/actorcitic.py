@@ -177,6 +177,9 @@ class ActorCritic(ABC):
 
             print("Evaluation Reward: {}".format(float(total_reward.cpu())/10.0))
             self.learn_hist['reward'].append(float(total_reward.cpu())/10.0)
+            
+            if total_reward > env.options['reward_save_threshold']:
+                torch.save(self.actor.state_dict(), f"{env.options['agent_folder']}/actor{env.episode}.pth")
 
         else:
             state = env.reset()

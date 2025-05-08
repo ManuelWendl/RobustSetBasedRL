@@ -86,7 +86,7 @@ class DDPG(ActorCritic):
             eval_state = Zonotope(z_state)
 
         elif self.options['critic_train_mode'] == 'adv_naive':
-            raise NotImplementedError("Advantage Naive Training not implemented yet.")
+            eval_state = self.naive_attack(state)
         elif self.options['critic_train_mode'] == 'adv_grad':
             raise NotImplementedError("Advantage Gradient Training not implemented yet.")
         else:
@@ -178,6 +178,10 @@ class DDPG(ActorCritic):
         elif self.options['actor_train_mode'] in ['point','adv_naive','adv_grad'] and self.options['critic_train_mode'] == 'point':
             q_val = self.critic(torch.cat([states,actions],dim=1))
             loss = -q_val.mean()
+        elif self.options['actor_train_mode'] == 'MAD' and self.options['critic_train_mode'] == 'point':
+            q_val = self.critic(torch.cat([states,actions],dim=1))
+            a_loss = self.mad_attack(states)
+            loss = -q_val.mean() + a_loss
         else:
             raise ValueError("Invalid critic and actor training mode combination. Possible combinations: Actor: ('point','adv_naive','adv_grad','set','set') and Critic: ('point','point','point','point','set')")
                              
@@ -229,3 +233,119 @@ class DDPG(ActorCritic):
             if key not in options:
                 options[key] = default_options[key] 
         return options
+    
+    def mad_attack(self,states):
+        """
+        Performs the MAD (Maximum Action Difference) attack on the actor network [1].
+        [1] H. Zhang et.al. Robust Deep Reinforcement Learning against Adversarial Perturbations on State Observations, Int. Conf. on Neural Information Processing Systems (NeurIPS) 2020 
+
+        Parameters:
+        -----------
+        - states: The states of the environment
+
+        Returns:
+        --------
+        - action_loss: The loss of the actor 
+        """
+
+        step_eps = self.options["noise"]/self.options["actor_adv_num_samples"]
+        adv_ub = states + self.options["noise"]
+        adv_lb = states - self.options["noise"]
+
+        actions = self.actor(states)
+
+        beta = 1e-5
+        noise_factor = torch.sqrt(2*torch.tensor(step_eps))*beta
+        noise = torch.randn_like(states) * noise_factor
+
+
+        adv_states = (states.clone().detach() + noise.sign() * step_eps).detach().requires_grad_()
+
+        for i in range(self.options["actor_adv_num_samples"]):
+            adv_loss = (self.actor(adv_states) - actions.detach()).pow(2).mean()
+            adv_loss.backward()
+            noise_factor = torch.sqrt(2*torch.tensor(step_eps))*beta /(i+2)
+            update = (adv_states.grad + noise_factor * adv_states.grad.sign()).detach() * step_eps
+            adv_states = (adv_states + update).clamp(adv_lb, adv_ub).detach().requires_grad_()
+        
+        action_loss = (self.actor(adv_states) - actions.detach()).pow(2).mean()
+        
+        return action_loss
+    
+    def naive_attack(self, states):
+        """
+        Performs the Naive attack on the actor network [1].
+        [1] Pattanaik, A. et al. 'Robust Deep Reinforcement Learning with Adversarial Attacks', Int. Conf. on Autonomous Agents and Multiagent Systems (AAMAS) 2018
+
+        Parameters:
+        -----------
+        - states: The states of the environment
+
+        Returns:
+        - adv_states: The adversarial states
+        """
+
+        alpha = self.options["actor_adv_alpha"]
+        beta = self.options["actor_adv_beta"]
+
+        eps = self.options["noise"]
+
+        action = self.actor(states)
+        Q_val = self.target_critic(torch.cat([states,action],dim=1))
+
+        states_batch = states.repeat(self.options["actor_adv_num_samples"],1)
+
+        beta = torch.distributions.beta.Beta(torch.tensor(alpha),torch.tensor(beta))
+        noise = beta.sample(states_batch.shape).to(self.device) * eps
+
+        adv_states = states_batch + noise
+        adv_actions = self.actor(adv_states)
+        adv_Q_val = self.target_critic(torch.cat([adv_states,adv_actions],dim=1))
+
+        [min_idx] = torch.argmin(adv_Q_val,dim=0)
+
+        if adv_Q_val[min_idx] < Q_val:
+            adv_states = states_batch[min_idx]
+        else:
+            adv_states = states_batch[0]
+        return adv_states
+
+
+    def grad_attack(self, states):
+        """
+        Performs the Gradient attack on the actor network [1].
+        [1] Pattanaik, A. et al. 'Robust Deep Reinforcement Learning with Adversarial Attacks', Int. Conf. on Autonomous Agents and Multiagent Systems (AAMAS) 2018
+
+        Parameters:
+        -----------
+        - states: The states of the environment
+
+        Returns:
+        - adv_states: The adversarial states
+        """
+
+        alpha = self.options["actor_adv_alpha"]
+        beta = self.options["actor_adv_beta"]
+        eps = self.options["noise"]
+
+        states = states.clone().detach().requires_grad_()
+
+        action = self.actor(states)
+        Q_val = self.critic(torch.cat([states,action],dim=1))
+
+        Q_val.backward()
+        grad = states.grad.sign()
+
+        grad_batch = grad.repeat(self.options["actor_adv_num_samples"],1)
+        beta = torch.distributions.beta.Beta(torch.tensor(alpha),torch.tensor(beta))
+        
+        adv_states = states - beta.sample(states.shape).to(self.device) * eps * grad_batch
+        adv_actions = self.actor(adv_states)
+        adv_Q_val = self.critic(torch.cat([adv_states,adv_actions],dim=1))
+
+        [min_idx] = torch.argmin(adv_Q_val,dim=0)
+        if adv_Q_val[min_idx] < Q_val:
+            adv_states = states[min_idx]
+        else:
+            adv_states = states[0]
+        return adv_states

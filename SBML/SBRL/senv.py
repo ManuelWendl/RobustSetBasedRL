@@ -177,6 +177,8 @@ class GymEnvironment:
         - max_steps: 1000 (default) - Maximum number of steps
         - reset_noise_scale: 1e-3 (default) - Reset noise scale
         - video_folder: './videos' (default) - Folder to save videos
+        - agent_folder: './agents' (default) - Folder to save agents
+        - reward_save_threshold: 0.0 (default) - Reward save threshold
     - device: cuda (gpu) or cpu
     - isDone: Boolean to check if the episode is done
     - stepNum: Number of steps taken in the environment
@@ -199,7 +201,7 @@ class GymEnvironment:
 
         self.options = self.__validateOptions(options)
         self.device = device
-        self.env = gym.make(gym_env_name, render_mode="rgb_array", reset_noise_scale=self.options['reset_noise_scale'])
+        self.env = gym.make(gym_env_name, render_mode="rgb_array") # If the environment needs reset_noise_scale, add it to the environment
         self.isDone = False
         self.stepNum = 0
         self.max_steps = self.options['max_steps']
@@ -225,6 +227,8 @@ class GymEnvironment:
             'max_steps': 1000,
             'reset_noise_scale': 1e-3,
             'video_folder': './videos',
+            'agent_folder': './agents',
+            'reward_save_threshold': 0.0,
         }
 
         for key in default_options.keys():
