@@ -1,12 +1,21 @@
 # SBML Set-Based Machine Learning
 
-This package provides a code base for set-based neural network training on regression and classification tasks as well as set-based reinforcement learning. 
-The advantage of set-based neural network training is to obtain certifiably robust models, for bounded input noise.
+This package provides a code base for set-based neural network training on regression and classification tasks, as well as set-based reinforcement learning. 
+The advantage of set-based neural network training is to obtain certifiably robust models for bounded input noise.
 
 The package is based on the following papers:
 
-- [End-to-End set-based neural networks](https://arxiv.org/abs/2401.14961)
-- [Training Verifiably Robust Agents using Set-Based Reinforcement Learning](https://arxiv.org/abs/2408.09112)
+- [1] [End-to-End set-based neural networks](https://arxiv.org/abs/2401.14961)
+- [2] [Training Verifiably Robust Agents using Set-Based Reinforcement Learning](https://arxiv.org/abs/2408.09112)
+
+With this repository, the results of [2] can be recreated for the MuJoCo Hopper benchmark. 
+By using set-based reinforcement learning, the robustness against several attack types can be improved. 
+
+These are the example videos from [2] for the uniform-random attack,
+<img src="examples/Hopper/videosRand.gif" alt="SetBasedRL" style="height: 300px; margin-right: 10px;">
+
+and the MAD (maximum action difference) attack.
+<img src="examples/Hopper/videosMad.gif" alt="SetBasedRL" style="height: 300px; margin-right: 10px;">
 
 ## Structure
 
