@@ -12,9 +12,11 @@ With this repository, the results of [2] can be recreated for the MuJoCo Hopper 
 By using set-based reinforcement learning, the robustness against several attack types can be improved. 
 
 These are the example videos from [2] for the uniform-random attack,
+
 <img src="examples/Hopper/videosRand.gif" alt="SetBasedRL" style="height: 300px; margin-right: 10px;">
 
 and the MAD (maximum action difference) attack.
+
 <img src="examples/Hopper/videosMad.gif" alt="SetBasedRL" style="height: 300px; margin-right: 10px;">
 
 ## Structure
