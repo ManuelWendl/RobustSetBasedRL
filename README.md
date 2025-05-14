@@ -11,7 +11,7 @@ The package is based on the following papers:
 With this repository, the results of [2] can be recreated for the MuJoCo Hopper benchmark. 
 By using set-based reinforcement learning, the robustness against several attack types can be improved. 
 
-These are the example videos from [2] for the uniform-random attack,and the MAD (maximum action difference) attack for $\ell_\infty$ pertrubations with radii $\epsilon_\text{test}=0.1$ and $\epsilon_\text{test}=0.0.75.
+These are the example videos from [2] for the uniform-random attack,and the MAD (maximum action difference) attack for $\ell_\infty$ pertrubations with radii $\epsilon_\text{test}=0.1$ and $\epsilon_\text{test}=0.0.75$.
 
 <img src="examples/Hopper/videosRand.gif" alt="SetBasedRL" style="height: 400px; margin-right: 10px;"> <img src="examples/Hopper/videosMad.gif" alt="SetBasedRL" style="height: 400px; margin-right: 10px;">
 
