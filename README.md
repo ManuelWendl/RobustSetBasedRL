@@ -41,3 +41,14 @@ Examples can be run in the Jupyter Notebooks in
 ```
 ./examples
 ```
+## Citation
+
+If you use this code or find it helpful in your research, please cite the following paper:
+
+```bibtex
+@article{wendl2024training,
+  title={Training verifiably robust agents using set-based reinforcement learning},
+  author={Wendl, Manuel and Koller, Lukas and Ladner, Tobias and Althoff, Matthias},
+  journal={arXiv preprint arXiv:2408.09112},
+  year={2024}
+}
