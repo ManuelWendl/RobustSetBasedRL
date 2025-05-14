@@ -25,3 +25,18 @@ The code is structured as a Python package:
 
 - `examples` contains example scripts for regression, classification, and reinforcement learning tasks
 
+## Installation
+
+This repository uses **Python 3.8.** and [mujoco210](https://github.com/google-deepmind/mujoco). 
+
+All requirements are given in 
+```
+requirements.txt
+
+and can be installed with
+```bash
+pip install -r requirements.txt
+
+Examples can be run in the Jupyter Notebooks in
+```
+./examples
