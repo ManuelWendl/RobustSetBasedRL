@@ -1,6 +1,6 @@
 # SBML Set-Based Machine Learning
 
-This package provides a code base for set-based neural network training on regression and classification tasks, as well as set-based reinforcement learning. 
+This package provides the Python code for set-based neural network training on regression and classification tasks, as well as set-based reinforcement learning. 
 The advantage of set-based neural network training is to obtain certifiably robust models for bounded input noise.
 
 The package is based on the following papers:
