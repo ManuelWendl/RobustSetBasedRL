@@ -13,12 +13,11 @@ By using set-based reinforcement learning, the robustness against several attack
 
 These are the example videos from [2] for the uniform-random attack,and the MAD (maximum action difference) attack.
 
-<img src="examples/Hopper/videosRand.gif" alt="SetBasedRL" style="height: 500px; margin-right: 10px;">
-<img src="examples/Hopper/videosMad.gif" alt="SetBasedRL" style="height: 500px; margin-right: 10px;">
+<img src="examples/Hopper/videosRand.gif" alt="SetBasedRL" style="height: 500px; margin-right: 10px;"> <img src="examples/Hopper/videosMad.gif" alt="SetBasedRL" style="height: 500px; margin-right: 10px;">
 
 ## Structure
 
-The code is structured as a python package:
+The code is structured as a Python package:
 
 - `SBML` contains the main code base
     - `SBML/ZonoTorch` contains the set-based zonotope extension for PyTorch
