@@ -32,11 +32,12 @@ This repository uses **Python 3.8.** and [mujoco210](https://github.com/google-d
 All requirements are given in 
 ```
 requirements.txt
-
+```
 and can be installed with
 ```bash
 pip install -r requirements.txt
-
+```
 Examples can be run in the Jupyter Notebooks in
 ```
 ./examples
+```
