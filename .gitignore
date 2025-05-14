@@ -3,7 +3,6 @@
 *__pycache__
 */videos*
 */figures
-*/agent_*
-*/agents_*
-*/Hopper*
-*/examples/
+*/agent*
+*/agents*
+*/aux_*
